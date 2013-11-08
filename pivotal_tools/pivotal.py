@@ -1,11 +1,10 @@
 # Core Imports
 import os
 from urllib import quote
-import xml.etree.ElementTree as ET
+import json
 
 # 3rd Party Imports
 import requests
-import dicttoxml
 
 TOKEN = os.getenv('PIVOTAL_TOKEN', None)
 
@@ -74,7 +73,10 @@ class Story(object):
     @property
     def first_label(self):
         """returns the first label if any from labels.  Used for grouping"""
-        return self.labels.split(',')[0]
+        if self.labels:
+            return self.labels[0]
+        else:
+            return None
 
 
     @classmethod
@@ -94,41 +96,41 @@ class Story(object):
 
 
     @classmethod
-    def from_node(cls, node):
+    def from_json(cls, node):
         """instantiates a Story object from an elementTree node, build child notes and attachment lists"""
 
         story = Story()
-        story.story_id = _parse_text(node, 'id')
+        story.story_id = _parse_int(node, 'id')
         story.name = _parse_text(node, 'name')
         story.owned_by = _parse_text(node, 'owned_by')
         story.story_type = _parse_text(node, 'story_type')
         story.state = _parse_text(node, 'current_state')
         story.description = _parse_text(node, 'description')
         story.estimate = _parse_int(node, 'estimate')
-        story.labels = _parse_text(node, 'labels')
+        story.labels = _parse_array(node, 'labels')
         story.url = _parse_text(node, 'url')
-        story.project_id = _parse_text(node, 'project_id')
+        story.project_id = _parse_int(node, 'project_id')
 
-        note_nodes = node.find('notes')
+        note_nodes = node.get('notes')
         if note_nodes is not None:
             for note_node in note_nodes:
-                note_id = _parse_text(note_node, 'id')
+                note_id = _parse_int(note_node, 'id')
                 text = _parse_text(note_node, 'text')
                 author = _parse_text(note_node, 'author')
                 story.notes.append(Note(note_id, text, author))
 
-        attachment_nodes = node.find('attachments')
+        attachment_nodes = node.get('attachments')
         if attachment_nodes is not None:
             for attachment_node in attachment_nodes:
-                attachment_id = _parse_text(attachment_node, 'id')
+                attachment_id = _parse_int(attachment_node, 'id')
                 description = _parse_text(attachment_node, 'text')
                 url = _parse_text(attachment_node, 'url')
                 story.attachments.append(Attachment(attachment_id,description,url))
 
-        task_nodes = node.find('tasks')
+        task_nodes = node.get('tasks')
         if task_nodes is not None:
             for task_node in task_nodes:
-                task_id = _parse_text(task_node, 'id')
+                task_id = _parse_int(task_node, 'id')
                 description = _parse_text(task_node, 'description')
                 complete = _parse_boolean(task_node, 'complete')
                 story.tasks.append(Task(task_id, description, complete))
@@ -139,13 +141,15 @@ class Story(object):
 
     def assign_estimate(self, estimate):
         """changes the estimate of a story"""
-        update_story_url ="https://www.pivotaltracker.com/services/v3/projects/{}/stories/{}?story[estimate]={}".format(self.project_id, self.story_id, estimate)
-        response = _perform_pivotal_put(update_story_url)
+        update_story_url ="https://www.pivotaltracker.com/services/v5/projects/{}/stories/{}".format(self.project_id, self.story_id)
+        payload = {'estimate': estimate}
+        _perform_pivotal_put(update_story_url, payload)
 
     def set_state(self, state):
         """changes the estimate of a story"""
-        update_story_url ="https://www.pivotaltracker.com/services/v3/projects/{}/stories/{}?story[current_state]={}".format(self.project_id, self.story_id, state)
-        response = _perform_pivotal_put(update_story_url)
+        update_story_url ="https://www.pivotaltracker.com/services/v5/projects/{}/stories/{}".format(self.project_id, self.story_id, state)
+        payload = {'current_state': state}
+        response = _perform_pivotal_put(update_story_url, payload)
         return response
 
     def finish(self):
@@ -181,28 +185,28 @@ class Project(object):
         self.point_scale = point_scale
 
     @classmethod
-    def from_node(cls, project_node):
+    def from_json(cls, project_node):
         name = _parse_text(project_node, 'name')
-        id = _parse_text(project_node, 'id')
+        id = _parse_int(project_node, 'id')
         point_scale = _parse_array(project_node, 'point_scale')
         return Project(id, name, point_scale)
 
     @classmethod
     def all(cls):
         """returns all projects for the given user"""
-        projects_url = 'https://www.pivotaltracker.com/services/v3/projects'
+        projects_url = 'https://www.pivotaltracker.com/services/v5/projects'
         response = _perform_pivotal_get(projects_url)
 
-        root = ET.fromstring(response.text)
+        root = json.loads(response.text)
         if root is not None:
-            return [Project.from_node(project_node) for project_node in root]
+            return [Project.from_json(project_node) for project_node in root]
 
     @classmethod
     def load_project(cls, project_id):
-        url = "https://www.pivotaltracker.com/services/v3/projects/%s" % project_id
+        url = "https://www.pivotaltracker.com/services/v5/projects/%s" % project_id
         response = _perform_pivotal_get(url)
 
-        project_node = ET.fromstring(response.text)
+        project_node = json.loads(response.text)
         name = _parse_text(project_node, 'name')
         return Project(project_id, name)
 
@@ -213,31 +217,29 @@ class Project(object):
         """
 
         story_filter = quote(filter_string, safe='')
-        stories_url = "https://www.pivotaltracker.com/services/v3/projects/{}/stories?filter={}".format(self.project_id, story_filter)
+        stories_url = "https://www.pivotaltracker.com/services/v5/projects/{}/stories?filter={}".format(self.project_id, story_filter)
 
         response = _perform_pivotal_get(stories_url)
-        stories_root = ET.fromstring(response.text)
+        stories_root = json.loads(response.text)
 
-        return [Story.from_node(story_node) for story_node in stories_root]
+        return [Story.from_json(story_node) for story_node in stories_root]
 
     def load_story(self, story_id):
         """Trys to find a story, returns None is not found"""
-        story_url = "https://www.pivotaltracker.com/services/v3/projects/{}/stories/{}".format(self.project_id, story_id)
+        story_url = "https://www.pivotaltracker.com/services/v5/projects/{}/stories/{}".format(self.project_id, story_id)
 
         resposne = _perform_pivotal_get(story_url)
-        # print resposne.text
         if resposne.status_code == 404:
             # Not Found
             return None
         else:
             #Found, parsing story
-            root = ET.fromstring(resposne.text)
-            return Story.from_node(root)
+            root = json.loads(resposne.text)
+            return Story.from_json(root)
 
-    def create_story(self,story_dict):
-        stories_url = "https://www.pivotaltracker.com/services/v3/projects/{}/stories".format(self.project_id)
-        story_xml = dicttoxml.dicttoxml(story_dict, root=False)
-        _perform_pivotal_post(stories_url, story_xml)
+    def create_story(self, story_dict):
+        stories_url = "https://www.pivotaltracker.com/services/v5/projects/{}/stories".format(self.project_id)
+        _perform_pivotal_post(stories_url, story_dict)
 
     def unestimated_stories(self):
         stories = self.get_stories('type:feature state:unstarted')
@@ -268,26 +270,25 @@ def _perform_pivotal_get(url):
     return response
 
 
-def _perform_pivotal_put(url):
-    headers = {'X-TrackerToken': TOKEN, 'Content-Length': 0}
-    response = requests.put(url, headers=headers)
+def _perform_pivotal_put(url, payload):
+    headers = {'X-TrackerToken': TOKEN, 'Content-type': "application/json"}
+    response = requests.put(url, headers=headers, data=json.dumps(payload))
     response.raise_for_status()
     return response
 
-def _perform_pivotal_post(url,payload_xml):
-    headers = {'X-TrackerToken': TOKEN, 'Content-type': "application/xml"}
-    response = requests.post(url, data=payload_xml, headers=headers)
+def _perform_pivotal_post(url, payload):
+    headers = {'X-TrackerToken': TOKEN, 'Content-type': "application/json"}
+    response = requests.post(url, data=json.dumps(payload), headers=headers)
     response.raise_for_status()
     return response
 
 
 def _parse_text(node, key):
     """parses test from an ElementTree node, if not found returns empty string"""
-    element = node.find(key)
+    element = node.get(key)
     if element is not None:
-        text = element.text
-        if text is not None:
-            return text.strip()
+        if element is not None:
+            return element.strip()
         else:
             return ''
     else:
@@ -296,28 +297,25 @@ def _parse_text(node, key):
 
 def _parse_int(node, key):
     """parses an int from an ElementTree node, if not found returns None"""
-    element = node.find(key)
+    element = node.get(key)
     if element is not None:
-        return int(element.text)
+        return int(element)
     else:
         return None
 
 
 def _parse_array(node, key):
     """parses an int from an ElementTree node, if not found returns None"""
-    element = node.find(key)
+    element = node.get(key)
     if element is not None:
-        return element.text.split(',')
+        return element
     else:
         return None
 
 def _parse_boolean(node, key):
     """parses an boolean from an ElementTree node, if not found returns None"""
-    element = node.find(key)
+    element = node.get(key)
     if element is not None:
-        if element.text == 'true':
-            return True
-        else:
-            return False
+        return bool(element)
     else:
         return None

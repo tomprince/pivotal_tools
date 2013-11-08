@@ -106,11 +106,12 @@ def generate_changelog(project):
         if len(stories) > 0:
             for story in stories:
                 story_string = ""
-                if story.labels is not None and len(story.labels) > 0:
-                    story_string += "[{}] ".format(story.labels)
+                labels = [label['name'] for label in story.labels]
+                if labels:
+                    story_string += "[{}] ".format(", ".join(labels))
 
                 story_string += story.name
-                print '* {:14s} {}'.format('[{}]'.format(story.story_id), story_string)
+                print u'* {:14s} {}'.format(u'[{}]'.format(story.story_id), story_string)
         else:
             print 'None'
             print
@@ -413,10 +414,11 @@ def group_stories_by_owner(stories):
 def group_stories_by_label(stories):
     stories_by_label = {}
     for story in stories:
-        if story.first_label in stories_by_label:
-            stories_by_label[story.first_label].append(story)
+        if story.first_label:
+            label = story.first_label['name']
         else:
-            stories_by_label[story.first_label] = [story]
+            label = 'None'
+        stories_by_label.setdefault(label, []).append(story)
 
     return stories_by_label
 
