@@ -141,16 +141,16 @@ class Story(object):
 
     def assign_estimate(self, estimate):
         """changes the estimate of a story"""
+        return self.update(estimate=estimate)
+
+    def update(self, **payload):
+        """changes the estimate of a story"""
         update_story_url ="https://www.pivotaltracker.com/services/v5/projects/{}/stories/{}".format(self.project_id, self.story_id)
-        payload = {'estimate': estimate}
-        _perform_pivotal_put(update_story_url, payload)
+        return _perform_pivotal_put(update_story_url, payload)
 
     def set_state(self, state):
         """changes the estimate of a story"""
-        update_story_url ="https://www.pivotaltracker.com/services/v5/projects/{}/stories/{}".format(self.project_id, self.story_id, state)
-        payload = {'current_state': state}
-        response = _perform_pivotal_put(update_story_url, payload)
-        return response
+        return self.update(current_state=state)
 
     def finish(self):
         if self.estimate == -1:
