@@ -195,9 +195,7 @@ class Project(object):
     def all(cls):
         """returns all projects for the given user"""
         projects_url = 'https://www.pivotaltracker.com/services/v5/projects'
-        response = _perform_pivotal_get(projects_url)
-
-        root = json.loads(response.text)
+        root = _perform_pivotal_get(projects_url)
         if root is not None:
             return [Project.from_json(project_node) for project_node in root]
 
@@ -205,9 +203,7 @@ class Project(object):
     def load_project(cls, project_id):
         url = "https://www.pivotaltracker.com/services/v5/projects/%s" % project_id
         response = _perform_pivotal_get(url)
-
-        project_node = json.loads(response.text)
-        name = _parse_text(project_node, 'name')
+        name = _parse_text(response, 'name')
         return Project(project_id, name)
 
     def get_stories(self, filter_string):
@@ -220,22 +216,21 @@ class Project(object):
         stories_url = "https://www.pivotaltracker.com/services/v5/projects/{}/stories?filter={}".format(self.project_id, story_filter)
 
         response = _perform_pivotal_get(stories_url)
-        stories_root = json.loads(response.text)
-
-        return [Story.from_json(story_node) for story_node in stories_root]
+        return [Story.from_json(story_node) for story_node in response]
 
     def load_story(self, story_id):
         """Trys to find a story, returns None is not found"""
         story_url = "https://www.pivotaltracker.com/services/v5/projects/{}/stories/{}".format(self.project_id, story_id)
 
-        resposne = _perform_pivotal_get(story_url)
-        if resposne.status_code == 404:
-            # Not Found
-            return None
-        else:
-            #Found, parsing story
-            root = json.loads(resposne.text)
-            return Story.from_json(root)
+
+        try:
+            response = _perform_pivotal_get(story_url)
+            return Story.from_json(response)
+        except requests.HTTPError as e:
+            if e.response.status_code == 404:
+                # Not Found
+                return None
+            raise
 
     def create_story(self, story_dict):
         stories_url = "https://www.pivotaltracker.com/services/v5/projects/{}/stories".format(self.project_id)
@@ -267,20 +262,21 @@ def _perform_pivotal_get(url):
     headers = {'X-TrackerToken': TOKEN}
     # print url
     response = requests.get(url, headers=headers)
-    return response
+    response.raise_for_status()
+    return response.json()
 
 
 def _perform_pivotal_put(url, payload):
     headers = {'X-TrackerToken': TOKEN, 'Content-type': "application/json"}
     response = requests.put(url, headers=headers, data=json.dumps(payload))
     response.raise_for_status()
-    return response
+    return response.json()
 
 def _perform_pivotal_post(url, payload):
     headers = {'X-TrackerToken': TOKEN, 'Content-type': "application/json"}
     response = requests.post(url, data=json.dumps(payload), headers=headers)
     response.raise_for_status()
-    return response
+    return response.json()
 
 
 def _parse_text(node, key):

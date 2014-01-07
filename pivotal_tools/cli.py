@@ -38,12 +38,13 @@ Create a story
 Usage:
   pivotal_tools create (feature|bug|chore) <title> [<description>] [--project-index=<pi>]
   pivotal_tools (start|finish|deliver|accept|reject) story <story_id> [--project-index=<pi>]
-  pivotal_tools show stories [--project-index=<pi>] [--for=<user_name>] [--number=<number_of_stories>]
+  pivotal_tools show stories [--project-index=<pi>] [--for=<user_name>] [--number=<number_of_stories>] [<filter>]
   pivotal_tools show story <story_id> [--project-index=<pi>]
   pivotal_tools open <story_id> [--project-index=<pi>]
   pivotal_tools changelog [--project-index=<pi>]
   pivotal_tools scrum [--project-index=<pi>]
   pivotal_tools (planning|poker) [--project-index=<pi>]
+  pivotal_tools show reviews [--project-index=<pi>]
 
 Options:
   -h --help             Show this screen.
@@ -130,13 +131,15 @@ def generate_changelog(project):
     print
 
 
-def show_stories(project, arguments):
+def show_stories(project, arguments,
+        search_string='state:unscheduled,unstarted,rejected,started'):
     """Shows the top stories
     By default it will show the top 20.  But that change be changed by the --number arguement
     You can further filter the list by passing the --for argument and pass the initials of the user
     """
 
-    search_string = 'state:unscheduled,unstarted,rejected,started'
+    if arguments['<filter>']:
+        search_string += ' {}'.format(arguments['<filter>'])
     if arguments['--for'] is not None:
         search_string += " owner:{}".format(arguments['--for'])
 
@@ -512,6 +515,9 @@ def main():
     elif arguments['show'] and arguments['stories']:
         project = prompt_project(arguments)
         show_stories(project, arguments)
+    elif arguments['show'] and arguments['reviews']:
+        project = prompt_project(arguments)
+        show_stories(project, arguments, 'state:delivered')
     elif arguments['show'] and arguments['story']:
         show_story(arguments['<story_id>'], arguments)
     elif arguments['open']:
